@@ -307,9 +307,10 @@
   const splashGrid=document.getElementById('splashGrid');
   const splashPicker=document.getElementById('splashPicker');
   const splashAdd=document.getElementById('splashAdd');
-  let splashUrls=[], splashItems=[], splashTimer=null, splashIdx=0, splashHidden=false;
+  let splashUrls=[], splashItems=[], splashTimer=null, splashHidden=false;
   const splashStart=Date.now();
-  setTimeout(()=>hideSplash(), 6000);   // hard fallback so the splash never traps the page
+  const SPLASH_SHOW_MS=340;                                   // time each photo is shown
+  let splashFallback=setTimeout(()=>hideSplashNow(), 9000);   // safety net only
 
   document.body.classList.toggle('local', !LIVE);
 
@@ -539,37 +540,40 @@
     refreshUI();
   }
 
-  /* ===== SPLASH ===== */
-  function cycleSplash(){
-    if(!splashUrls.length) return;
-    splashBg.classList.remove('show');
-    setTimeout(()=>{
-      splashBg.style.backgroundImage=`url("${splashUrls[splashIdx % splashUrls.length]}")`;
-      splashBg.classList.add('show'); splashIdx++;
-    }, 130);
-  }
+  /* ===== SPLASH (flash every gallery photo twice, then reveal) ===== */
   async function loadSplash(){
     try{
       if(LIVE && sb){
-        // Splash flashes the published gallery photos — no separate set needed
         const { data }=await sb.from('images').select('url,pub_sort').eq('is_published', true).order('pub_sort',{ascending:true});
-        splashUrls=(data||[]).map(r=>r.url).slice(0,12);
+        splashUrls=(data||[]).map(r=>r.url);
       }
     }catch(e){}
-    if(splashUrls.length){
-      splashUrls.forEach(u=>{ const im=new Image(); im.src=u; });
-      cycleSplash(); splashTimer=setInterval(cycleSplash, 650);
-    }
+    if(!splashUrls.length) return;               // no photos → boot holds the logo briefly
+    splashUrls.forEach(u=>{ const im=new Image(); im.src=u; });
+    const total = splashUrls.length * 2;         // every photo, twice
+    const expected = total*(SPLASH_SHOW_MS+110)+1400;
+    clearTimeout(splashFallback);
+    splashFallback=setTimeout(()=>hideSplashNow(), expected+4000);   // safety only
+    let shown=0;
+    const step=()=>{
+      splashBg.classList.remove('show');
+      splashTimer=setTimeout(()=>{
+        splashBg.style.backgroundImage=`url("${splashUrls[shown % splashUrls.length]}")`;
+        splashBg.classList.add('show');
+        shown++;
+        splashTimer=setTimeout(shown>=total ? hideSplashNow : step, SPLASH_SHOW_MS);
+      }, 110);
+    };
+    step();
   }
-  function hideSplash(){
+  function hideSplashNow(){
     if(splashHidden) return; splashHidden=true;
-    const wait=Math.max(0, 1800-(Date.now()-splashStart));
-    setTimeout(()=>{
-      splashEl.classList.add('hide');
-      if(splashTimer) clearInterval(splashTimer);
-      setTimeout(()=>{ splashEl.style.display='none'; }, 700);
-    }, wait);
+    clearTimeout(splashFallback);
+    if(splashTimer) clearTimeout(splashTimer);
+    splashEl.classList.add('hide');
+    setTimeout(()=>{ splashEl.style.display='none'; }, 700);
   }
+  function hideSoon(){ setTimeout(hideSplashNow, Math.max(0, 1200-(Date.now()-splashStart))); }
 
   /* splash manager (admin) */
   const closeSplashManager=()=>splashManager.classList.remove('open');
@@ -619,15 +623,17 @@
   async function boot(){
     if(LIVE){
       sb=supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      loadSplash();                                    // flash images in parallel with data load
+      const sp=loadSplash();                           // fetch photos + start the 2-pass flash
       const { data:{ session } }=await sb.auth.getSession();
       await setAdmin(!!session);
       sb.auth.onAuthStateChange((_e,s)=>{ setAdmin(!!s); });
-      hideSplash();                                    // gallery ready → fade splash out
+      await sp;
+      if(!splashUrls.length) hideSoon();               // no photos → just hold the logo briefly
     } else {
       document.body.classList.add('admin');  // editable local demo
       updateAuthLink(); renderAll();
-      loadSplash(); hideSplash();
+      await loadSplash();
+      if(!splashUrls.length) hideSoon();
     }
   }
   boot();
