@@ -485,19 +485,14 @@
     else { a.href='#'; a.addEventListener('click',e=>{ e.preventDefault(); item.action(); }); }
     menuList.appendChild(a);
   });
-  let splashLink=null, authLink=null;
+  let authLink=null;
   if(LIVE){
-    splashLink=document.createElement('a'); splashLink.className='auth'; splashLink.href='#'; splashLink.textContent='Splash Images';
-    splashLink.style.display='none';
-    splashLink.addEventListener('click', e=>{ e.preventDefault(); openSplashManager(); });
-    menuList.appendChild(splashLink);
-
     authLink=document.createElement('a'); authLink.className='auth'; authLink.href='#'; authLink.textContent='Log Out';
     authLink.style.display='none';
     authLink.addEventListener('click', async e=>{ e.preventDefault(); await sb.auth.signOut(); toast('Logged out'); closeMenu(); });
     menuList.appendChild(authLink);
   }
-  function updateAuthLink(){ const d=isAdmin?'block':'none'; if(authLink)authLink.style.display=d; if(splashLink)splashLink.style.display=d; }
+  function updateAuthLink(){ if(authLink) authLink.style.display = isAdmin ? 'block' : 'none'; }
 
   document.getElementById('menu').addEventListener('click',openMenu);
   document.querySelectorAll('[data-close-menu]').forEach(b=>b.addEventListener('click',closeMenu));
@@ -556,8 +551,9 @@
   async function loadSplash(){
     try{
       if(LIVE && sb){
-        const { data }=await sb.from('splash_images').select('url,sort').order('sort',{ascending:true});
-        splashUrls=(data||[]).map(r=>r.url);
+        // Splash flashes the published gallery photos — no separate set needed
+        const { data }=await sb.from('images').select('url,pub_sort').eq('is_published', true).order('pub_sort',{ascending:true});
+        splashUrls=(data||[]).map(r=>r.url).slice(0,12);
       }
     }catch(e){}
     if(splashUrls.length){
